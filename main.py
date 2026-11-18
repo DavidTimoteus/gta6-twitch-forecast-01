@@ -74,23 +74,23 @@
 # rather than floating free on an average that may match no launch at all.
 #
 # ---------------------------------------------------------------------------
-# Stretch the learned viewer trajectory so it matches the opening hour we actually measured.
+# A tighter quantile band can still score well because pinball loss rewards sharp, well-calibrated central estimates over raw width.
 # Forecast design (authored in this build session)
-# The first hour of a big console launch is a poor anchor for the rest of the
-# day: the world wakes up in different time zones and the category's audience
-# swells as the Americas come online. We therefore learn the typical shape of
-# that climb from the comparable launches bundled with the case, express it as
-# a log ratio to hour one, and place honest quantiles around the median path.
-# Nothing here needs the network; everything is read from the case file.
-# Quantile forecasts are scored with pinball loss, which rewards a slate of
-# quantiles that stays narrow yet still covers the truth, so we ship a spread
-# rather than a point estimate; the comparables set the shape while hour one sets the level.
+# We learn the typical post-hour-one climb from comparable midnight launches,
+# but shrink it toward a flat path: a single launch is unlike any other, so the
+# measured shape is a hint, not a law. The mean of the comparables' log ratios
+# is a steadier centre than the median when only a dozen launches qualify, and
+# a slightly narrower fan than the raw spread keeps the quantiles honest under
+# pinball loss. Nothing here needs the network; everything is read from the case.
+# ---------------------------------------------------------------------------
+# The learned climb is damped because any single launch only faintly echoes the others.
+# The mean is preferred over the median to steady the centre when few launches qualify.
 """Forecast GTA VI launch-day Twitch viewers, hours 2-24, from comparables.
 
-Deterministic and offline. For each case, learn the median post-hour-1 viewer
-trajectory from past big console launches (midnight-local unlock) supplied in
-the case's `comparables`, scale it to the case's hour-1 print, and emit honest
-quantiles with an empirical log-residual spread.
+Deterministic and offline. For each case, learn the shrunk mean post-hour-1
+viewer trajectory from past big console launches (midnight-local unlock)
+supplied in the case's `comparables`, scale it to the case's hour-1 print, and
+emit honest quantiles with an empirical log-residual spread.
 """
 import json, math, os, statistics
 from datetime import datetime
@@ -98,6 +98,9 @@ from datetime import datetime
 INPUT_DIR = os.environ.get("MAKEFUN_INPUT_DIR", "/input")
 OUTPUT_DIR = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
 Z = [-1.645, -0.674, 0.0, 0.674, 1.645]
+# Because this launch is unlike any prior one, the fitted opening-day pattern is only a loose guide and should be discounted.
+SHRINK = 0.75
+SPREAD = 0.85
 
 
 def parse_ts(s):
@@ -143,10 +146,9 @@ def learn_curve(comparables, exclude_name):
     med, sd = {}, {}
     for h, vals in ratios.items():
         if len(vals) >= 4:
-            m = statistics.median(vals)
-            med[h] = m
+            m = sum(vals) / len(vals)
+            med[h] = SHRINK * m
             sd[h] = statistics.pstdev(vals)
-    # fallbacks if a thin case
     default_med = 0.0
     default_sd = 0.30
     return med, sd, default_med, default_sd
@@ -159,7 +161,7 @@ def forecast(case):
     for row in case.get("forecast", []):
         h = int(row["hour"])
         m = med.get(h, dm)
-        s = max(sd.get(h, ds), 0.05)
+        s = max(sd.get(h, ds), 0.05) * SPREAD
         qs = [round(p1 * math.exp(m + z * s), 2) for z in Z]
         qs = [min(max(q, 0.01), 1_000_000_000.0) for q in qs]
         for i in range(1, 5):
