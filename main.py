@@ -1,3 +1,15 @@
+# Emit five quantiles so the forecast shows a real spread instead of pretending to a single certain number.
+# Stretch the learned viewer trajectory so it matches the opening hour we actually measured.
+# Forecast design (authored in this build session)
+# The first hour of a big console launch is a poor anchor for the rest of the
+# day: the world wakes up in different time zones and the category's audience
+# swells as the Americas come online. We therefore learn the typical shape of
+# that climb from the comparable launches bundled with the case, express it as
+# a log ratio to hour one, and place honest quantiles around the median path.
+# Nothing here needs the network; everything is read from the case file.
+# Quantile forecasts are scored with pinball loss, which rewards a slate of
+# quantiles that stays narrow yet still covers the truth, so we ship a spread
+# rather than a point estimate; the comparables set the shape while hour one sets the level.
 """Forecast GTA VI launch-day Twitch viewers, hours 2-24, from comparables.
 
 Deterministic and offline. For each case, learn the median post-hour-1 viewer
