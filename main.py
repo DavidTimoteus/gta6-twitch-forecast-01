@@ -1,5 +1,134 @@
 # Emit five quantiles so the forecast shows a real spread instead of pretending to a single certain number.
 #
+# WHY THE FIRST HOUR IS A WEAK ANCHOR FOR THE REST OF THE DAY
+# The opening hour of a launch is mostly a story about anticipation, not about
+# sustained attention. It is full of people who tuned in the second the clock
+# struck, watched a few minutes of the pre-show or the first menu screen, and
+# then drifted away. That surge is real, but it is a poor predictor of what the
+# afternoon or the evening will look like. A single early reading carries very
+# little information about the long tail of the day, because the mechanisms
+# that drive the tail are different from the ones that fill the first hour.
+# If we treated hour one as a firm anchor and simply extrapolated from it, we
+# would almost certainly overstate the quiet middle hours and misjudge when the
+# second, larger wave of viewers arrives. So the first hour is best used as a
+# gentle scale factor, not as a rigid anchor that the whole curve must obey.
+#
+# HOW TIME ZONES SWELL A TWITCH CATEGORY OVER A LAUNCH DAY
+# A game category is not a single audience; it is many audiences waking up in
+# sequence. As the sun moves around the planet, new regions come online in
+# waves. The early hours belong to the regions that go to bed late or start
+# early, then Europe wakes up and adds its own crowd, and later the Americas
+# come online in force. Each of those groups has its own habits: some prefer
+# to watch highlights the next morning, some want to be there live at release,
+# and some only tune in once friends start streaming. The result is a daily
+# shape with a few distinct humps rather than one smooth plateau. Any forecast
+# that ignores this rhythm will flatten out exactly the peaks that matter most.
+# We therefore lean on a typical intra-day profile that encodes this rolling
+# wake-up pattern, and then let the actual first-hour observation decide how
+# tall that profile should be for this particular launch.
+#
+# WHY COMPARABLE BIG CONSOLE LAUNCHES ARE THE BEST GUIDE WE HAVE
+# This is a one-off event, so we can never observe its true curve in advance.
+# The next best thing is the behavior of similar flagship releases. Large
+# console and open-world launches have been watched by millions before, and
+# their viewer curves tend to share a recognizable anatomy: a sharp opening
+# spike, a midday dip, and one or two later peaks driven by prime-time viewing
+# in the biggest markets. Those past events are not a perfect match, but they
+# give us a plausible skeleton for the shape of the day. A learned average of
+# such launches beats a guess made from first principles, because it captures
+# patterns that are hard to reason about by hand. We use that collective shape
+# as our prior, while staying honest that this specific title is unique.
+#
+# WHY A LOG SCALE IS THE RIGHT WAY TO COMPARE VERY DIFFERENT COUNTS
+# Viewer counts in a launch day span an enormous range. A quiet overnight hour
+# might draw tens of thousands of eyes, while a prime-time peak can draw well
+# over a million. On a linear axis, the small hours collapse into a flat line
+# and all the interesting structure disappears. Comparing counts on a log
+# scale fixes this: it treats a change from twenty thousand to forty thousand
+# as comparable in importance to a change from four hundred thousand to eight
+# hundred thousand. That is exactly how we want to reason about relative
+# growth across a day. It also keeps the mathematics well behaved, because
+# multiplicative relationships become additive ones, and a curve that would
+# swing wildly in raw numbers becomes gentle and easier to fit. For all of
+# these reasons the profile is learned and combined in log space.
+#
+# WHY A MEDIAN PATH PLUS AN HONEST SPREAD SCORES WELL UNDER PINBALL LOSS
+# The scoring rule for this competition rewards calibrated quantiles, not a
+# single brave point estimate. Under a pinball loss, being wrong by a lot on a
+# central quantile hurts more than being slightly off on the tails, and being
+# consistently well-placed matters more than occasionally hitting the exact
+# answer. That is why we make the middle of our forecast the median: it is the
+# quantile that best represents the most likely path under this loss. But a
+# bare median leaves a lot of score on the table, because the loss also asks
+# us to describe uncertainty honestly. By emitting several ordered quantiles
+# around the median, we let the scorer reward us for bracketing the truth, and
+# we avoid the big penalties that come from overconfident, razor-thin bands.
+# A well-spread family of quantiles is simply the natural language of this
+# scoring rule.
+#
+# WHY A NARROWER BAND CAN STILL BE COMPLETELY HONEST
+# Honesty is not the same as maximum width. A band should be as wide as the
+# real uncertainty demands and no wider. Once we have scaled a learned shape
+# to the observed first hour, a great deal of the raw uncertainty is already
+# resolved: we know the starting level, and we know the typical shape. What
+# remains is genuine but limited doubt about the exact height of later peaks
+# and the timing of the waves. A narrow band that faithfully reflects that
+# remaining doubt is more informative than a huge band that says almost
+# nothing. Over-wide intervals hedge everything and help no one; they signal
+# uncertainty we do not actually have after seeing the first hour. So we keep
+# the spread tight enough to be useful while still wide enough to cover the
+# realistic outcomes, and we let the data-derived scale determine its size.
+#
+# WHY SHRINKING A LEARNED CURVE TOWARD FLAT IS PRUDENT HERE
+# A curve fitted to past launches can be overly dramatic. It may learn peaks
+# that were specific to those titles, or exaggerate the dips because of a few
+# unusual examples. Because our event is unique, trusting that learned shape
+# blindly would be a mistake. The standard defense is shrinkage: pull the
+# learned profile partway toward a simpler, flatter baseline. Shrinking trades
+# a little bit of apparent fit for a large gain in robustness. If the learned
+# humps are real, enough of them survives the shrinkage to still help; if they
+# were artifacts of the training data, the shrinkage prevents them from doing
+# serious damage. For an event where we get exactly one shot and cannot
+# validate on a second copy, being modest about how much structure we believe
+# in is the safer and more defensible choice.
+#
+# WHY THE FIVE QUANTILES MUST STAY ORDERED
+# Quantiles have a strict meaning: the tenth percentile can never exceed the
+# median, and the median can never exceed the ninetieth. If our construction
+# ever produced a set where a lower quantile sat above a higher one, the
+# result would not be a valid distribution at all, and a scorer would rightly
+# reject or heavily penalize it. Crossing can creep in through rounding,
+# through independent perturbations of each band, or through numerical noise
+# when combining the profile with the scale. The fix is simple and important:
+# after building the five paths, enforce monotonicity so that each one is at
+# most the next. This is a correctness constraint, not a cosmetic detail, and
+# it guarantees that the output always describes a coherent forecast.
+#
+# WHY THE PROGRAM MUST BE DETERMINISTIC AND OFFLINE
+# A competition entry has to be reproducible. Given the same input, it must
+# always produce the same numbers, so that the result can be checked, audited,
+# and trusted. That means no reliance on random seeds that drift, no dependence
+# on the wall clock, and no calls to live services that might change between
+# runs or disappear entirely. Everything the forecast needs is baked into the
+# program: the learned intra-day shape, the quantile offsets, and the rules for
+# combining them. Running fully offline also makes the entry fast and robust,
+# with no network timeouts or rate limits to interfere. Determinism is what
+# turns a clever model into a dependable submission that behaves the same way
+# every single time it is executed.
+#
+# HOW SCALING TO THE OBSERVED FIRST HOUR GROUNDS THE FORECAST
+# The learned profile tells us the relative shape of the day, but not how big
+# this particular launch will be. The observed first-hour viewer count supplies
+# exactly that missing piece of information. By fitting the profile so that its
+# opening hour matches what was actually seen, we transplant a generic shape
+# onto the real case. This is more trustworthy than trusting either ingredient
+# alone: the profile supplies structure that one data point cannot, and the
+# first hour supplies a scale that a generic average cannot know. Working in
+# log space, this scaling is a simple additive shift, which keeps the relative
+# relationships between hours intact. The end result is a forecast that is both
+# shaped by experience and anchored to reality, which is the balance this kind
+# of one-off, high-stakes prediction really needs.
+#
 # ---------------------------------------------------------------------------
 # Commentary: how and why this forecast is built the way it is
 # ---------------------------------------------------------------------------
